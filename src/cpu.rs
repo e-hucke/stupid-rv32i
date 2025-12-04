@@ -3,17 +3,38 @@ pub struct CPU {
     pub pc: u32,
 }
 
+fn bits_from_to(bits: u32, upper: u32, lower: u32) -> u32 {
+    (bits << (31 - upper)) >> (lower + (31 - upper))
+}
+
+fn funct3(instruction: u32) -> u32 {
+    bits_from_to(instruction, 14, 12)
+}
+
+fn rd(instruction: u32) -> u8 {
+    bits_from_to(instruction, 11, 7) as u8
+}
+
+fn rs1(instruction: u32) -> u8 {
+    bits_from_to(instruction, 19, 15) as u8
+}
+
+fn rs2(instruction: u32) -> u8 {
+    bits_from_to(instruction, 24, 20) as u8
+}
+
 impl CPU {
     pub fn interpret(&mut self, instruction: u32) -> () {
-        let op_code = (instruction & 0x7F) as u8;
+        let op_code = bits_from_to(instruction, 6, 0) as u8;
 
         match op_code {
+            // r type
             0b_0110011 => {
-                let rd = ((instruction >> 7) & 0x1F) as u8;
-                let funct3 = (instruction >> 12) & 0x7;
-                let rs1 = ((instruction >> 15) & 0x1F) as u8;
-                let rs2 = ((instruction >> 20) & 0x1F) as u8;
-                let funct7 = (instruction >> 25) & 0x7F;
+                let rd = rd(instruction);
+                let funct3 = funct3(instruction);
+                let rs1 = rs1(instruction);
+                let rs2 = rs2(instruction);
+                let funct7 = bits_from_to(instruction, 31, 25);
                 match (funct3, funct7) {
                     (0x0, 0x00) => self.add(rd, rs1, rs2),
                     (0x0, 0x20) => self.sub(rd, rs1, rs2),
@@ -28,13 +49,14 @@ impl CPU {
                     (_, _) => panic!(),
                 }
             }
+            // i type
             0b_0010011 => {
-                let rd = ((instruction >> 7) & 0x1F) as u8;
-                let funct3 = (instruction >> 12) & 0x7;
-                let rs1 = ((instruction >> 15) & 0x1F) as u8;
+                let rd = rd(instruction);
+                let funct3 = funct3(instruction);
+                let rs1 = rs1(instruction);
                 let imm = ((instruction as i32) >> 20) as u32;
-                let imm_lower = (instruction >> 20) & 0x1F;
-                let imm_upper = (instruction >> 25) & 0x7F;
+                let imm_lower = bits_from_to(instruction, 24, 20);
+                let imm_upper = bits_from_to(instruction, 31, 25);
                 match funct3 {
                     0x0 => todo!("addi"),
                     0x4 => todo!("xori"),
@@ -54,10 +76,11 @@ impl CPU {
                     _ => panic!(),
                 }
             }
+            // i type
             0b_0000011 => {
-                let rd = ((instruction >> 7) & 0x1F) as u8;
-                let funct3 = (instruction >> 12) & 0x7;
-                let rs1 = ((instruction >> 15) & 0x1F) as u8;
+                let rd = rd(instruction);
+                let funct3 = funct3(instruction);
+                let rs1 = rs1(instruction);
                 let imm = ((instruction as i32) >> 20) as u32;
                 match funct3 {
                     0x0 => todo!("lb"),
@@ -68,15 +91,17 @@ impl CPU {
                     _ => panic!(),
                 }
             }
+            // i type
             0b_1100111 => {
-                let funct3 = (instruction >> 12) & 0x7;
+                let funct3 = funct3(instruction);
                 match funct3 {
                     0x0 => todo!("jalr"),
                     _ => panic!(),
                 }
             }
+            // i type
             0b_1110011 => {
-                let funct3 = (instruction >> 12) & 0x7;
+                let funct3 = funct3(instruction);
                 let imm = ((instruction as i32) >> 20) as u32;
                 match funct3 {
                     0x0 => match imm {
@@ -87,11 +112,13 @@ impl CPU {
                     _ => panic!(),
                 }
             }
+            // s type
             0b_0100011 => {
-                let funct3 = (instruction >> 12) & 0x7;
-                let rs1 = ((instruction >> 15) & 0x1F) as u8;
-                let rs2 = ((instruction >> 20) & 0x1F) as u8;
-                let imm = ((instruction >> 7) & 0x1F) | (((instruction as i32 >> 25) as u32) << 5);
+                let funct3 = funct3(instruction);
+                let rs1 = rs1(instruction);
+                let rs2 = rs2(instruction);
+                let imm =
+                    bits_from_to(instruction, 11, 7) | (((instruction as i32 >> 25) as u32) << 5);
                 match funct3 {
                     0x0 => todo!("sb"),
                     0x1 => todo!("sh"),
@@ -99,11 +126,16 @@ impl CPU {
                     _ => panic!(),
                 }
             }
-            0b1100011 => {
-                let funct3 = (instruction >> 12) & 0x7;
-                let rs1 = ((instruction >> 15) & 0x1F) as u8;
-                let rs2 = ((instruction >> 20) & 0x1F) as u8;
-                // todo wtf how do i decode imm here (b type)
+            // b type
+            0b_1100011 => {
+                let funct3 = funct3(instruction);
+                let rs1 = rs1(instruction);
+                let rs2 = rs2(instruction);
+                let imm = 0xFFFFFFFE
+                    & ((((instruction as i32 >> 19) as u32) & 0xFFFFF000)
+                        | ((instruction << 4) & 0x800)
+                        | ((instruction >> 20) & 0x7E0)
+                        | ((instruction >> 7) & 0x1E));
                 match funct3 {
                     0x0 => todo!("beq"),
                     0x1 => todo!("bne"),
@@ -114,15 +146,25 @@ impl CPU {
                     _ => panic!(),
                 }
             }
+            // j type
             0b_1101111 => {
-                let rd = ((instruction >> 7) & 0x1F) as u8;
-                // todo wtf how do i decode imm here (j type)
+                let rd = rd(instruction);
+                let imm = 0xFFFFFFFE
+                    & (((instruction as i32 >> 11) as u32 & 0xFFF00000)
+                        | (instruction & 0xFF000)
+                        | ((instruction >> 9) & 0x800)
+                        | ((instruction >> 20) & 0x7FE));
+                todo!("jal")
             }
+            // u type
             0b_0110111 => {
+                let rd = rd(instruction);
                 let imm = instruction & 0xFFFFF000;
                 todo!("lui")
             }
+            // u type
             0b_0010111 => {
+                let rd = rd(instruction);
                 let imm = instruction & 0xFFFFF000;
                 todo!("auipc")
             }
